@@ -1,7 +1,10 @@
-import json
 import requests
+from sqlalchemy.orm import sessionmaker
+from database import engine, Product
+SessionLocal = sessionmaker(bind=engine)
 
 def fetch_wb_products(query: str, page: int = 1, spp: int = 100):
+
     url = "https://search.wb.ru/exactmatch/ru/common/v18/search"
     params = {
         "ab_testing": "false",
@@ -19,33 +22,37 @@ def fetch_wb_products(query: str, page: int = 1, spp: int = 100):
         "uclusters": "2"
     }
 
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=10)
     response.raise_for_status()
     data = response.json()
-    products = data.get("products", [])
+    return data.get("products", [])
 
-    result = []
-    for product in products:
-        price = product.get("sizes", [{}])[0].get("price", {}).get("product", 0) / 100
 
-        item = {
-            "id": product.get("id"),
-            "name": product.get("name"),
-            "brand": product.get("brand"),
-            "rating": product.get("rating", 0),
-            "reviews_count": product.get("feedbacks", 0),
-            "price": price,
-            "stock": product.get("totalQuantity", 0)
-        }
-        result.append(item)
+def save_products_to_db(products):
+    db = SessionLocal()
+    for item in products:
+        # Проверяем, есть ли товар по wb_id
+        product = db.query(Product).filter_by(wb_id=item["id"]).first()
+        if not product:
+            price = item.get("sizes", [{}])[0].get("price", {}).get("product", 0) / 100
+            product = Product(
+                wb_id=item.get("id"),
+                name=item.get("name"),
+                brand=item.get("brand"),
+                price=float(price),
+                rating=float(item.get("rating")) if isinstance(item.get("rating"), (int, float)) else None,
+                reviews_count=item.get("feedbacks", 0),
+                stock=item.get("totalQuantity", 0)
+            )
+            db.add(product)
+    db.commit()
+    db.close()
 
-    return result
 
 def main():
     query = "термопаста"
     page = 1
-    all_products = []
-    seen_ids = set()
+    total_saved = 0
 
     while True:
         print(f"Обработка страницы {page}...")
@@ -54,15 +61,8 @@ def main():
         if not products:
             break
 
-        for p in products:
-            if p["id"] not in seen_ids:
-                seen_ids.add(p["id"])
-                all_products.append(p)
-
+        save_products_to_db(products)
+        total_saved += len(products)
         page += 1
-
-    with open("wb_thermopasta.json", "w", encoding="utf-8") as f:
-        json.dump(all_products, f, ensure_ascii=False, indent=2)
-
 if __name__ == "__main__":
     main()

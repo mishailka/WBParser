@@ -24,26 +24,7 @@ class Product(Base):
 
 Base.metadata.create_all(bind=engine)
 
-def import_products_from_json(path="wb_thermopasta.json"):
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
 
-    db = SessionLocal()
-    for item in data:
-        product = db.query(Product).filter_by(wb_id=item["id"]).first()
-        if not product:
-            product = Product(
-                wb_id=item["id"],
-                name=item["name"],
-                brand=item.get("brand"),
-                price=float(item.get("price", 0)),
-                rating=float(item["rating"]) if isinstance(item.get("rating"), (int, float)) else None,
-                reviews_count=item.get("reviews_count", 0),
-                stock=item.get("stock", 0)
-            )
-            db.add(product)
-    db.commit()
-    db.close()
 
 app = FastAPI(title="WB Products API")
 
@@ -68,6 +49,3 @@ def get_products(name: str | None = Query(None)):
         }
         for p in results
     ]
-
-if __name__ == "__main__":
-    import_products_from_json()
